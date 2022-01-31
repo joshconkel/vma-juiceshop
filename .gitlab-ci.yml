@@ -1,0 +1,204 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+stages:
+  - build
+  - test
+  - release
+  - preprod
+  - integration
+  - prod
+
+build:
+  stage: build
+  image: python:3.6
+  before_script:
+   - pip3 install --upgrade virtualenv
+  script:
+   - virtualenv env
+   - source env/bin/activate
+   - pip install -r requirements.txt
+   - python manage.py check
+
+test:
+  stage: test
+  image: python:3.6
+  before_script:
+   - pip3 install --upgrade virtualenv
+  script:
+   - virtualenv env
+   - source env/bin/activate
+   - pip install -r requirements.txt
+   - python manage.py test taskManager
+
+# Software Component Analysis
+sca-frontend:
+  stage: build
+  image: node:alpine3.10
+  before_script:
+    - apk add python3 py3-pip
+    - pip3 install requests 
+  script:
+    - npm install
+    - npm install -g retire # Install retirejs npm package.
+
+    - retire --outputformat json --outputpath retirejs-report.json --severity high --exitwith 0
+  after_script:
+    - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY" --engagement_id 3 --product_id 3 --result_file retirejs-report.json --scanner "Retire.js Scan"
+  artifacts:
+    paths: [retirejs-report.json]
+    when: always # Archive even on exit code failure
+    expire_in: one week
+  allow_failure: true #<--- allow the build to fail but don't mark it as such
+
+# Software bill of materials
+sca-syft:
+  stage: build
+  script:
+    - docker pull anchore/syft:v0.35.1
+    # Need to replace howiehowerton/djangonv-app-protect with container list
+    - docker run --rm anchore/syft packages anchore/syft -o json --scope all-layers | tee syft-sbom.json
+  artifacts:
+    paths: [syft-sbom.json]
+    when: always # Archive even on exit code failure
+    expire_in: one week
+  allow_failure: true #<--- allow the build to fail but don't mark it as such
+
+sca-grype:
+  stage: test #build not working with artifact
+  #Not working with artifact passing in same stage
+  #dependencies:
+  #  - sca-syft
+  before_script:
+    - apk add python3 py3-pip
+    - pip3 install requests 
+  script:
+    - docker pull anchore/grype
+    - ls -al
+    - docker run --rm -v $(pwd):/tmp anchore/grype sbom:/tmp/syft-sbom.json -o json | tee grype-output.json
+  after_script:
+    - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY"  --engagement_id 3 --product_id 3 --result_file grype-output.json --scanner "Anchore Grype"
+  artifacts:
+    paths: [grype-output.json]
+    when: always # Archive even on exit code failure
+    expire_in: one week
+  allow_failure: true #<--- allow the build to fail but don't mark it as such
+
+sca-backend:
+  stage: build
+  script:
+    - docker pull hysnsec/safety
+    - docker run --rm -v $(pwd):/src hysnsec/safety check -r requirements.txt --json > oast-results.json
+  artifacts:
+    paths: [oast-results.json]
+    when: always # Archive even on exit code failure
+  allow_failure: true #<--- allow the build to fail but don't mark it as such
+
+sonarqube-check:
+  stage: build
+  image: sonarsource/sonar-scanner-cli:latest
+  variables:
+    SONAR_TOKEN: "$SONAR_APIKEY"
+    SONAR_HOST_URL: "https://sonarqube.conkelhomelab.net"
+    SONAR_PROJECT_BASE_DIR: "${CI_PROJECT_DIR}"
+    GIT_DEPTH: 0
+  script:
+    - sonar-scanner -Dsonar.qualitygate.wait=true -Dsonar.projectKey=JUICESHOP
+  allow_failure: true
+  only:
+    - merge_requests
+    - master
+
+# Git Secrets Scanning
+secrets-scanning:
+  stage: build
+  before_script:
+    - apk add python3 py3-pip git
+    - pip3 install requests trufflehog gitpython
+  script:
+    - trufflehog https://gitlab-temp.conkelhomelab.net/root/juice-shop.git --json | tee trufflehog-output.json 
+  after_script:
+    - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY"  --engagement_id 3 --product_id 3 --result_file trufflehog-output.json --scanner "Trufflehog Scan"
+  artifacts:
+    paths: [trufflehog-output.json]
+    when: always # What is this for?
+    expire_in: one week
+  allow_failure: true   #<--- allow the build to fail but don't mark it as such
+
+# Static Application Security Testing
+bandit-scan:
+  stage: build
+  before_script:
+    - apk add python3 py3-pip
+    - pip3 install requests 
+  script:
+    - docker pull hysnsec/bandit  # Download bandit docker container
+    # Run docker container, please refer docker security course, if this doesn't make sense to you.
+    - docker run --user $(id -u):$(id -g) -v $(pwd):/src --rm hysnsec/bandit -r /src -f json -o /src/bandit-output.json
+  after_script:
+    - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY" --engagement_id 3 --product_id 3 --result_file bandit-output.json --scanner "Bandit Scan"
+  artifacts:
+    paths: [bandit-output.json]
+    when: always
+  allow_failure: true   #<--- allow the build to fail but don't mark it as such
+
+# Dynamic Application Security Testing
+nikto:
+  stage: integration
+  before_script:
+    - apk add python3 py3-pip
+    - pip3 install requests 
+  script:
+    - docker pull hysnsec/nikto
+    - docker run --rm -v $(pwd):/tmp hysnsec/nikto -h "$JUICESHOP_HOST" -o /tmp/nikto-output.xml
+  after_script:
+    - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY" --engagement_id 3 --product_id 3 --result_file nikto-output.xml --scanner "Nikto Scan"
+  artifacts:
+    paths: [nikto-output.xml]
+    when: always
+  allow_failure: true
+
+sslscan:
+  stage: integration
+  before_script:
+    - apk add python3 py3-pip
+    - pip3 install requests 
+  script:
+    - docker pull hysnsec/sslyze
+    - docker run --rm -v $(pwd):/tmp hysnsec/sslyze --regular "$JUICESHOP_HOST":443 --json_out /tmp/sslyze-output.json
+  after_script:
+    - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY" --engagement_id 3 --product_id 3 --result_file sslyze-output.json --scanner "Sslyze Scan"
+  artifacts:
+    paths: [sslyze-output.json]
+    when: always
+  allow_failure: true
+
+nmap:
+  stage: integration
+  before_script:
+    - apk add python3 py3-pip
+    - pip3 install requests 
+  script:
+    - docker pull hysnsec/nmap
+    - docker run --rm -v $(pwd):/tmp hysnsec/nmap "$JUICESHOP_HOST" -oX /tmp/nmap-output.xml
+  artifacts:
+    paths: [nmap-output.xml]
+    when: always
+  allow_failure: true
+
+zap_scan:
+  stage: build
+  before_script:
+    - apk add py-pip
+    - pip3 install requests
+  script:
+    - docker pull owasp/zap2docker-stable:2.10.0
+    - docker run --user $(id -u):$(id -g) -w /zap -v $(pwd):/zap/wrk:rw --rm owasp/zap2docker-stable:2.10.0 zap-baseline.py -t "$JUICESHOP_HOST_HTTPS" -x zap-output.xml
+  after_script:
+    - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY" --engagement_id 3 --product_id 3 --result_file zap-output.xml --scanner "ZAP Scan"
+  artifacts:
+    paths: [zap-output.xml]
+    when: always
+  allow_failure: true
