@@ -55,7 +55,7 @@ sca-syft:
   script:
     - docker pull anchore/syft:v0.35.1
     # Need to replace howiehowerton/djangonv-app-protect with container list
-    - docker run --rm anchore/syft packages anchore/syft -o json --scope all-layers | tee syft-sbom.json
+    - docker run --rm anchore/syft packages bkimminich/juice-shop -o json --scope all-layers | tee syft-sbom.json
   artifacts:
     paths: [syft-sbom.json]
     when: always # Archive even on exit code failure
@@ -71,7 +71,7 @@ sbom-generation:
   script:
     - docker pull anchore/syft:v0.35.1
     # Need to replace howiehowerton/djangonv-app-protect with container list
-    - docker run --rm anchore/syft packages anchore/syft -o cyclonedx --scope all-layers | tee cyclonedxfmt-sbom.xml
+    - docker run --rm anchore/syft packages bkimminich/juice-shop -o cyclonedx --scope all-layers | tee cyclonedxfmt-sbom.xml
   after_script:
     - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY"  --engagement_id 3 --product_id 3 --result_file cyclonedxfmt-sbom.xml --scanner "CycloneDX Scan"
   artifacts:
