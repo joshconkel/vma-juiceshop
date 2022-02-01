@@ -91,7 +91,7 @@ sonarqube-check:
     SONAR_PROJECT_BASE_DIR: "${CI_PROJECT_DIR}"
     GIT_DEPTH: 0
   script:
-    - sonar-scanner -Dsonar.qualitygate.wait=true -Dsonar.projectKey=JUICESHOP
+    - sonar-scanner -Dsonar.ce.javaOpts=-Xmx2048m -Dsonar.web.javaOpts=-Xmx2048m -Dsonar.qualitygate.wait=true -Dsonar.projectKey=JUICESHOP
   allow_failure: true
   only:
     - merge_requests
@@ -138,7 +138,7 @@ nikto:
     - pip3 install requests 
   script:
     - docker pull hysnsec/nikto
-    - docker run --rm -v $(pwd):/tmp hysnsec/nikto -h "$JUICESHOP_HOST" -o /tmp/nikto-output.xml
+    - docker run --rm -v $(pwd):/tmp hysnsec/nikto -h "$JUICESHOP_HOST" -ssl -o /tmp/nikto-output.xml
   after_script:
     - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY" --engagement_id 3 --product_id 3 --result_file nikto-output.xml --scanner "Nikto Scan"
   artifacts:
