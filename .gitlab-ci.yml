@@ -62,6 +62,24 @@ sca-syft:
     expire_in: one week
   allow_failure: true #<--- allow the build to fail but don't mark it as such
 
+# Software bill of materials (CycloneDX)
+sbom-generation:
+  stage: build
+  before_script:
+    - apk add python3 py3-pip
+    - pip3 install requests 
+  script:
+    - docker pull anchore/syft:v0.35.1
+    # Need to replace howiehowerton/djangonv-app-protect with container list
+    - docker run --rm anchore/syft packages anchore/syft -o cyclonedx --scope all-layers | tee cyclonedxfmt-sbom.xml
+  after_script:
+    - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY"  --engagement_id 3 --product_id 3 --result_file cyclonedxfmt-sbom.xml --scanner "CycloneDX Scan"
+  artifacts:
+    paths: [cyclonedxfmt-sbom.xml]
+    when: always # Archive even on exit code failure
+    expire_in: one week
+  allow_failure: true #<--- allow the build to fail but don't mark it as such
+
 sca-grype:
   stage: test #build not working with artifact
   #Not working with artifact passing in same stage
