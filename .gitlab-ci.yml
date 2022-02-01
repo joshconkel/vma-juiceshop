@@ -18,9 +18,7 @@ build:
    - pip3 install --upgrade virtualenv
   script:
    - virtualenv env
-   - source env/bin/activate
-   - pip install -r requirements.txt
-   - python manage.py check
+  
 
 test:
   stage: test
@@ -29,9 +27,7 @@ test:
    - pip3 install --upgrade virtualenv
   script:
    - virtualenv env
-   - source env/bin/activate
-   - pip install -r requirements.txt
-   - python manage.py test taskManager
+
 
 # Software Component Analysis
 sca-frontend:
@@ -86,16 +82,6 @@ sca-grype:
     expire_in: one week
   allow_failure: true #<--- allow the build to fail but don't mark it as such
 
-sca-backend:
-  stage: build
-  script:
-    - docker pull hysnsec/safety
-    - docker run --rm -v $(pwd):/src hysnsec/safety check -r requirements.txt --json > oast-results.json
-  artifacts:
-    paths: [oast-results.json]
-    when: always # Archive even on exit code failure
-  allow_failure: true #<--- allow the build to fail but don't mark it as such
-
 sonarqube-check:
   stage: build
   image: sonarsource/sonar-scanner-cli:latest
@@ -109,7 +95,7 @@ sonarqube-check:
   allow_failure: true
   only:
     - merge_requests
-    - master
+    - main
 
 # Git Secrets Scanning
 secrets-scanning:
