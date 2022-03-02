@@ -66,7 +66,7 @@ sca-syft:
 sbom-generation:
   stage: build
   before_script:
-    - apk add python3 py3-pip
+    - apk add python3 py3-pip curl
     - pip3 install requests 
   script:
     - docker pull anchore/syft:v0.35.1
