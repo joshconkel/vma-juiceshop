@@ -74,7 +74,7 @@ sbom-generation:
     - docker run --rm anchore/syft packages bkimminich/juice-shop -o cyclonedx --scope all-layers | tee cyclonedxfmt-sbom.xml
   after_script:
     - python3 upload-results.py --host "$DD_HOST" --api_key "$DD_APIKEY"  --engagement_id 4 --product_id 4 --result_file cyclonedxfmt-sbom.xml --scanner "CycloneDX Scan"
-    - 'curl -X "POST" "https://dependencytrackapi.slalomsf-lab.com/api/v1/bom" -H "Content-Type: multipart/form-data" -H "X-API-Key: t1FLjr79UtHlaSo0kMBkd82BJshSnCid" -F "project=082ac14b-7474-41a9-bf46-5ef246f8f1b6" -F "bom=cyclonedxfmt-sbom.xml"'
+    - 'curl -X "POST" "https://dependencytrackapi.slalomsf-lab.com/api/v1/bom" -H "Content-Type: multipart/form-data" -H "X-API-Key: t1FLjr79UtHlaSo0kMBkd82BJshSnCid" -F "project=082ac14b-7474-41a9-bf46-5ef246f8f1b6" -F "bom=@cyclonedxfmt-sbom.xml"'
 
   artifacts:
     paths: [cyclonedxfmt-sbom.xml]
